@@ -242,7 +242,7 @@ fun VerticalDivider() {
     Box(
         Modifier
             .width(1.dp)
-            .height(80.dp)
+            .fillMaxHeight()
             .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.3f))
     )
 }

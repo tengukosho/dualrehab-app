@@ -31,9 +31,27 @@ fun MessagesScreen(
     val messageText by viewModel.messageText.collectAsState()
     val listState = rememberLazyListState()
     
+    // Debug logging
+    LaunchedEffect(uiState) {
+        println("🔍 DEBUG MessagesScreen:")
+        println("  isLoading: ${uiState.isLoading}")
+        println("  experts: ${uiState.experts.size}")
+        println("  admins: ${uiState.admins.size}")
+        println("  contacts: ${uiState.contacts.size}")
+        println("  selectedContactId: ${uiState.selectedContactId}")
+        println("  error: ${uiState.error}")
+        
+        uiState.experts.forEach { expert ->
+            println("  Expert: ${expert.name} (role=${expert.role})")
+        }
+        uiState.admins.forEach { admin ->
+            println("  Admin: ${admin.name} (role=${admin.role})")
+        }
+    }
+    
     // Auto-scroll when new messages arrive
     LaunchedEffect(uiState.conversation.size) {
-        if (uiState.conversation.isNotEmpty() && uiState.selectedExpertId != null) {
+        if (uiState.conversation.isNotEmpty() && uiState.selectedContactId != null) {
             listState.animateScrollToItem(uiState.conversation.size - 1)
         }
     }
@@ -44,14 +62,14 @@ fun MessagesScreen(
                 title = {
                     Column {
                         Text(
-                            if (uiState.selectedExpertId != null) 
-                                uiState.selectedExpertName ?: "Expert Chat"
+                            if (uiState.selectedContactId != null) 
+                                uiState.selectedContactName ?: "Chat"
                             else 
                                 "Messages"
                         )
-                        if (uiState.selectedExpertId != null) {
+                        if (uiState.selectedContactId != null && uiState.selectedContactRole != null) {
                             Text(
-                                "Rehabilitation Expert",
+                                if (uiState.selectedContactRole == "admin") "Administrator" else "Rehabilitation Expert",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -59,9 +77,9 @@ fun MessagesScreen(
                     }
                 },
                 navigationIcon = {
-                    if (uiState.selectedExpertId != null) {
-                        IconButton(onClick = { viewModel.clearSelectedExpert() }) {
-                            Icon(Icons.Default.ArrowBack, "Back to experts list")
+                    if (uiState.selectedContactId != null) {
+                        IconButton(onClick = { viewModel.clearSelectedContact() }) {
+                            Icon(Icons.Default.ArrowBack, "Back")
                         }
                     }
                 },
@@ -73,99 +91,198 @@ fun MessagesScreen(
             )
         },
         bottomBar = {
-            if (uiState.selectedExpertId != null) {
+            if (uiState.selectedContactId != null) {
                 MessageInput(
                     messageText = messageText,
                     onMessageChange = { viewModel.updateMessageText(it) },
-                    onSend = { viewModel.sendMessage() }
+                    onSend = { viewModel.sendMessage() },
+                    isSending = uiState.sendingMessage
                 )
             }
         }
     ) { paddingValues ->
-        if (uiState.experts.isEmpty() && !uiState.isLoading) {
-            // No experts assigned
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.PersonOff,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            when {
+                uiState.isLoading && uiState.contacts.isEmpty() -> {
+                    // Loading state
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(16.dp))
+                            Text("Loading contacts...")
+                        }
+                    }
+                }
+                
+                uiState.error != null && uiState.contacts.isEmpty() -> {
+                    // Error state
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Error,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "Error Loading Contacts",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                uiState.error ?: "Unknown error",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Button(onClick = { viewModel.refresh() }) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+                }
+                
+                uiState.contacts.isEmpty() && !uiState.isLoading -> {
+                    // No contacts
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.PersonOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "No Contacts Available",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Contact your hospital to get assigned to experts or admins",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+                
+                uiState.selectedContactId == null -> {
+                    // Show contacts list
+                    ContactsList(
+                        experts = uiState.experts,
+                        admins = uiState.admins,
+                        onContactClick = { contact -> viewModel.selectContact(contact) },
+                        modifier = Modifier.fillMaxSize()
                     )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "No Expert Assigned",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Contact your hospital to assign a rehabilitation expert",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                }
+                
+                else -> {
+                    // Show conversation
+                    ConversationView(
+                        conversation = uiState.conversation,
+                        currentUserId = uiState.currentUser?.id,
+                        isLoading = uiState.isLoading,
+                        listState = listState,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
-        } else if (uiState.selectedExpertId == null) {
-            // Show experts list
-            ExpertsList(
-                experts = uiState.experts,
-                isLoading = uiState.isLoading,
-                onExpertClick = { expert -> viewModel.selectExpert(expert) },
-                modifier = Modifier.padding(paddingValues)
-            )
-        } else {
-            // Show conversation
-            ConversationView(
-                conversation = uiState.conversation,
-                currentUserId = uiState.currentUser?.id,
-                isLoading = uiState.isLoading,
-                listState = listState,
-                modifier = Modifier.padding(paddingValues)
-            )
         }
     }
 }
 
 @Composable
-fun ExpertsList(
+fun ContactsList(
     experts: List<com.rehab.platform.data.model.ExpertInfo>,
-    isLoading: Boolean,
-    onExpertClick: (com.rehab.platform.data.model.ExpertInfo) -> Unit,
+    admins: List<com.rehab.platform.data.model.ExpertInfo>,
+    onContactClick: (com.rehab.platform.data.model.ExpertInfo) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (isLoading) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-    } else {
-        LazyColumn(
-            modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Experts section
+        if (experts.isNotEmpty()) {
             item {
-                Text(
-                    "Your Experts",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.MedicalServices,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "🏥 Your Rehabilitation Experts",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             
             items(experts) { expert ->
-                ExpertCard(
-                    expert = expert,
-                    onClick = { onExpertClick(expert) }
+                ContactCard(
+                    contact = expert,
+                    onClick = { onContactClick(expert) },
+                    accentColor = MaterialTheme.colorScheme.primary
+                )
+            }
+            
+            item { Spacer(Modifier.height(8.dp)) }
+        }
+        
+        // Admins section
+        if (admins.isNotEmpty()) {
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.AdminPanelSettings,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.tertiary
+                    )
+                    Text(
+                        "🛡️ Administrators",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            
+            items(admins) { admin ->
+                ContactCard(
+                    contact = admin,
+                    onClick = { onContactClick(admin) },
+                    accentColor = MaterialTheme.colorScheme.tertiary
                 )
             }
         }
@@ -173,9 +290,10 @@ fun ExpertsList(
 }
 
 @Composable
-fun ExpertCard(
-    expert: com.rehab.platform.data.model.ExpertInfo,
-    onClick: () -> Unit
+fun ContactCard(
+    contact: com.rehab.platform.data.model.ExpertInfo,
+    onClick: () -> Unit,
+    accentColor: androidx.compose.ui.graphics.Color
 ) {
     Card(
         modifier = Modifier
@@ -193,33 +311,34 @@ fun ExpertCard(
             Surface(
                 modifier = Modifier.size(56.dp),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer
+                color = accentColor.copy(alpha = 0.1f)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        Icons.Default.Person,
+                        if (contact.role == "admin") Icons.Default.AdminPanelSettings 
+                        else Icons.Default.Person,
                         contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        modifier = Modifier.size(28.dp),
+                        tint = accentColor
                     )
                 }
             }
             
             Spacer(Modifier.width(16.dp))
             
-            // Expert info
+            // Contact info
             Column(Modifier.weight(1f)) {
                 Text(
-                    expert.name,
+                    contact.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Rehabilitation Expert",
+                    if (contact.role == "admin") "Administrator" else "Rehabilitation Expert",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (expert.hospital != null) {
+                if (contact.hospital != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -231,7 +350,7 @@ fun ExpertCard(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            expert.hospital,
+                            contact.hospital,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -240,13 +359,13 @@ fun ExpertCard(
             }
             
             // Unread badge
-            if (expert.unreadCount > 0) {
+            if (contact.unreadCount > 0) {
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary
+                    color = accentColor
                 ) {
                     Text(
-                        "${expert.unreadCount}",
+                        "${contact.unreadCount}",
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.onPrimary,
                         style = MaterialTheme.typography.labelSmall,
@@ -272,7 +391,7 @@ fun ConversationView(
     listState: androidx.compose.foundation.lazy.LazyListState,
     modifier: Modifier = Modifier
 ) {
-    if (isLoading) {
+    if (isLoading && conversation.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
@@ -351,7 +470,7 @@ fun MessageBubble(
             Column(Modifier.padding(12.dp)) {
                 if (!isFromCurrentUser) {
                     Text(
-                        message.sender?.name ?: "Expert",
+                        message.sender?.name ?: "Contact",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -377,7 +496,8 @@ fun MessageBubble(
 fun MessageInput(
     messageText: String,
     onMessageChange: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    isSending: Boolean
 ) {
     Surface(
         tonalElevation = 3.dp,
@@ -394,7 +514,8 @@ fun MessageInput(
                 onValueChange = onMessageChange,
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Type a message...") },
-                maxLines = 4
+                maxLines = 4,
+                enabled = !isSending
             )
             Spacer(Modifier.width(8.dp))
             FloatingActionButton(
@@ -402,7 +523,15 @@ fun MessageInput(
                 modifier = Modifier.size(56.dp),
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Icon(Icons.Default.Send, "Send", tint = MaterialTheme.colorScheme.onPrimary)
+                if (isSending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Default.Send, "Send", tint = MaterialTheme.colorScheme.onPrimary)
+                }
             }
         }
     }

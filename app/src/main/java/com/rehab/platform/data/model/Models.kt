@@ -241,6 +241,7 @@ data class ExpertInfo(
     val id: Int,
     val name: String,
     val email: String,
+    val role: String = "expert",
     val hospital: String? = null,
     val unreadCount: Int = 0
 )

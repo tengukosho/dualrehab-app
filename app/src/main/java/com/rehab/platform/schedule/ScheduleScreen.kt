@@ -32,6 +32,26 @@ fun ScheduleScreen(
         viewModel.getSchedulesForSelectedDate()
     }
     
+    // Auto-select today if selected date is in the past
+    LaunchedEffect(uiState.selectedDate) {
+        val today = Calendar.getInstance()
+        today.set(Calendar.HOUR_OF_DAY, 0)
+        today.set(Calendar.MINUTE, 0)
+        today.set(Calendar.SECOND, 0)
+        today.set(Calendar.MILLISECOND, 0)
+        
+        val selected = Calendar.getInstance()
+        selected.time = uiState.selectedDate
+        selected.set(Calendar.HOUR_OF_DAY, 0)
+        selected.set(Calendar.MINUTE, 0)
+        selected.set(Calendar.SECOND, 0)
+        selected.set(Calendar.MILLISECOND, 0)
+        
+        if (selected.before(today)) {
+            viewModel.selectDate(today.time)
+        }
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -59,7 +79,7 @@ fun ScheduleScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                // Week Calendar
+                // Week Calendar (only show today onwards)
                 WeekCalendar(
                     selectedDate = uiState.selectedDate,
                     onDateSelected = { viewModel.selectDate(it) },
@@ -131,14 +151,17 @@ fun WeekCalendar(
     onDateSelected: (Date) -> Unit,
     schedules: List<Schedule>
 ) {
-    val calendar = Calendar.getInstance()
-    calendar.time = selectedDate
-    calendar.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
-    
-    val weekDates = remember(selectedDate) {
+    // Generate dates starting from today (not beginning of week)
+    val weekDates = remember {
+        val today = Calendar.getInstance()
+        today.set(Calendar.HOUR_OF_DAY, 0)
+        today.set(Calendar.MINUTE, 0)
+        today.set(Calendar.SECOND, 0)
+        today.set(Calendar.MILLISECOND, 0)
+        
         (0..6).map {
-            val date = calendar.time
-            calendar.add(Calendar.DAY_OF_MONTH, 1)
+            val date = today.time
+            today.add(Calendar.DAY_OF_MONTH, 1)
             date
         }
     }
@@ -148,14 +171,18 @@ fun WeekCalendar(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(weekDates) { date ->
-            DayCell(
-                date = date,
-                isSelected = isSameDay(date, selectedDate),
-                hasSchedule = schedules.any { schedule ->
-                    schedule.scheduledDate.startsWith(formatDateForComparison(date))
-                },
-                onClick = { onDateSelected(date) }
-            )
+            val isPast = date.before(Date())
+            if (!isPast) {
+                DayCell(
+                    date = date,
+                    isSelected = isSameDay(date, selectedDate),
+                    isToday = isSameDay(date, Date()),
+                    hasSchedule = schedules.any { schedule ->
+                        schedule.scheduledDate.startsWith(formatDateForComparison(date))
+                    },
+                    onClick = { onDateSelected(date) }
+                )
+            }
         }
     }
 }
@@ -164,6 +191,7 @@ fun WeekCalendar(
 fun DayCell(
     date: Date,
     isSelected: Boolean,
+    isToday: Boolean,
     hasSchedule: Boolean,
     onClick: () -> Unit
 ) {
@@ -175,8 +203,11 @@ fun DayCell(
         modifier = Modifier
             .clip(MaterialTheme.shapes.medium)
             .background(
-                if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surface
+                when {
+                    isSelected -> MaterialTheme.colorScheme.primaryContainer
+                    isToday -> MaterialTheme.colorScheme.secondaryContainer
+                    else -> MaterialTheme.colorScheme.surface
+                }
             )
             .clickable(onClick = onClick)
             .padding(12.dp)
@@ -185,17 +216,34 @@ fun DayCell(
         Text(
             dayFormat.format(date),
             style = MaterialTheme.typography.labelSmall,
-            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-            else MaterialTheme.colorScheme.onSurfaceVariant
+            color = when {
+                isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+                isToday -> MaterialTheme.colorScheme.onSecondaryContainer
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
         )
         Spacer(Modifier.height(4.dp))
         Text(
             dateFormat.format(date),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-            else MaterialTheme.colorScheme.onSurface
+            color = when {
+                isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+                isToday -> MaterialTheme.colorScheme.onSecondaryContainer
+                else -> MaterialTheme.colorScheme.onSurface
+            }
         )
+        
+        // Show "Today" label
+        if (isToday && !isSelected) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Today",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
+        
         if (hasSchedule) {
             Spacer(Modifier.height(4.dp))
             Box(

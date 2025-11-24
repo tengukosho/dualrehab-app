@@ -14,11 +14,15 @@ data class MessagesUiState(
     val isLoading: Boolean = false,
     val currentUser: User? = null,
     val experts: List<com.rehab.platform.data.model.ExpertInfo> = emptyList(),
-    val selectedExpertId: Int? = null,
-    val selectedExpertName: String? = null,
+    val admins: List<com.rehab.platform.data.model.ExpertInfo> = emptyList(),
+    val contacts: List<com.rehab.platform.data.model.ExpertInfo> = emptyList(),
+    val selectedContactId: Int? = null,
+    val selectedContactName: String? = null,
+    val selectedContactRole: String? = null,
     val conversation: List<Message> = emptyList(),
     val unreadCount: Int = 0,
-    val error: String? = null
+    val error: String? = null,
+    val sendingMessage: Boolean = false
 )
 
 class MessagesViewModel(private val repository: RehabRepository) : ViewModel() {
@@ -31,7 +35,7 @@ class MessagesViewModel(private val repository: RehabRepository) : ViewModel() {
     
     init {
         loadCurrentUser()
-        loadExperts()
+        loadContacts()
         loadUnreadCount()
     }
     
@@ -44,14 +48,30 @@ class MessagesViewModel(private val repository: RehabRepository) : ViewModel() {
         }
     }
     
-    private fun loadExperts() {
+    private fun loadContacts() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val result = repository.getAssignedExperts()
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                experts = result.getOrNull() ?: emptyList()
-            )
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            
+            val result = repository.getAllContacts()
+            
+            if (result.isSuccess) {
+                val allContacts = result.getOrNull() ?: emptyList()
+                val experts = allContacts.filter { it.role == "expert" }
+                val admins = allContacts.filter { it.role == "admin" }
+                
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    experts = experts,
+                    admins = admins,
+                    contacts = allContacts,
+                    error = null
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = result.exceptionOrNull()?.message
+                )
+            }
         }
     }
     
@@ -64,34 +84,48 @@ class MessagesViewModel(private val repository: RehabRepository) : ViewModel() {
         }
     }
     
-    fun selectExpert(expert: com.rehab.platform.data.model.ExpertInfo) {
+    fun selectContact(contact: com.rehab.platform.data.model.ExpertInfo) {
         _uiState.value = _uiState.value.copy(
-            selectedExpertId = expert.id,
-            selectedExpertName = expert.name
+            selectedContactId = contact.id,
+            selectedContactName = contact.name,
+            selectedContactRole = contact.role
         )
-        loadConversation(expert.id)
+        loadConversation(contact.id)
     }
     
-    fun clearSelectedExpert() {
+    fun clearSelectedContact() {
         _uiState.value = _uiState.value.copy(
-            selectedExpertId = null,
-            selectedExpertName = null,
+            selectedContactId = null,
+            selectedContactName = null,
+            selectedContactRole = null,
             conversation = emptyList()
         )
-        loadExperts()
+        loadContacts()
     }
     
-    fun loadConversation(expertId: Int) {
+    private fun loadConversation(contactId: Int) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             
-            val result = repository.getConversation(expertId)
+            val result = repository.getConversation(contactId)
             
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 conversation = result.getOrNull() ?: emptyList(),
                 error = result.exceptionOrNull()?.message
             )
+            
+            // Mark messages as read
+            if (result.isSuccess) {
+                markConversationAsRead(contactId)
+            }
+        }
+    }
+    
+    private fun markConversationAsRead(contactId: Int) {
+        viewModelScope.launch {
+            repository.sendMessage(contactId, "") // Placeholder, actual mark read happens in backend
+            loadUnreadCount()
         }
     }
     
@@ -99,32 +133,43 @@ class MessagesViewModel(private val repository: RehabRepository) : ViewModel() {
         _messageText.value = text
     }
     
-    fun sendMessage(videoId: Int? = null) {
-        val expertId = _uiState.value.selectedExpertId ?: return
+    fun sendMessage() {
+        val contactId = _uiState.value.selectedContactId ?: return
         val text = _messageText.value.ifBlank { return }
         
         viewModelScope.launch {
-            val messageContent = if (videoId != null) {
-                """📹 Video lesson #$videoId
-
-$text"""
-            } else {
-                text
-            }
+            _uiState.value = _uiState.value.copy(sendingMessage = true)
             
-            val result = repository.sendMessage(expertId, messageContent)
+            val result = repository.sendMessage(contactId, text)
             
             if (result.isSuccess) {
                 _messageText.value = ""
-                loadConversation(expertId)
+                loadConversation(contactId)
+                loadUnreadCount()
+            }
+            
+            _uiState.value = _uiState.value.copy(sendingMessage = false)
+        }
+    }
+    
+    fun shareVideo(videoId: Int, contactId: Int, message: String) {
+        viewModelScope.launch {
+            val videoMessage = """📹 Video Lesson #$videoId
+
+$message"""
+            
+            val result = repository.sendMessage(contactId, videoMessage)
+            
+            if (result.isSuccess) {
+                loadUnreadCount()
             }
         }
     }
     
     fun refresh() {
         loadCurrentUser()
-        loadExperts()
+        loadContacts()
         loadUnreadCount()
-        _uiState.value.selectedExpertId?.let { loadConversation(it) }
+        _uiState.value.selectedContactId?.let { loadConversation(it) }
     }
 }

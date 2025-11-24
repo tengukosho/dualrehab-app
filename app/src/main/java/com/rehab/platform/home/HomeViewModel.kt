@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 
 data class HomeUiState(
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val categories: List<Category> = emptyList(),
     val videos: List<Video> = emptyList(),
     val selectedCategory: Category? = null,
@@ -24,13 +25,17 @@ class HomeViewModel(private val repository: RehabRepository) : ViewModel() {
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     
     init {
+        loadData()
+    }
+    
+    private fun loadData() {
         loadCategories()
         loadAllVideos()
     }
     
     fun loadCategories() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             
             val result = repository.getCategories()
             
@@ -51,7 +56,7 @@ class HomeViewModel(private val repository: RehabRepository) : ViewModel() {
     
     fun loadAllVideos() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             
             val result = repository.getVideos()
             
@@ -72,7 +77,7 @@ class HomeViewModel(private val repository: RehabRepository) : ViewModel() {
     
     fun loadVideosByCategory(categoryId: Int) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             
             val result = repository.getVideos(categoryId = categoryId)
             
@@ -101,11 +106,27 @@ class HomeViewModel(private val repository: RehabRepository) : ViewModel() {
     }
     
     fun refresh() {
-        loadCategories()
-        if (_uiState.value.selectedCategory != null) {
-            loadVideosByCategory(_uiState.value.selectedCategory!!.id)
-        } else {
-            loadAllVideos()
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isRefreshing = true, error = null)
+            
+            // Load both in parallel
+            val categoriesJob = launch { loadCategories() }
+            val videosJob = launch {
+                if (_uiState.value.selectedCategory != null) {
+                    loadVideosByCategory(_uiState.value.selectedCategory!!.id)
+                } else {
+                    loadAllVideos()
+                }
+            }
+            
+            categoriesJob.join()
+            videosJob.join()
+            
+            _uiState.value = _uiState.value.copy(isRefreshing = false)
         }
+    }
+    
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
     }
 }

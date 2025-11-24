@@ -22,6 +22,9 @@ interface ApiService {
     @PUT("users/me")
     suspend fun updateProfile(@Body user: Map<String, String>): Response<User>
     
+    @GET("users/contact/{id}")
+    suspend fun getUserById(@Path("id") id: Int): Response<User>
+    
     // ============ Categories ============
     
     @GET("categories")

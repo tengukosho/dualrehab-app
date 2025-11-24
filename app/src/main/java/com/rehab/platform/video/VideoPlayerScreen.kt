@@ -3,6 +3,7 @@ package com.rehab.platform.video
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -23,20 +25,23 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.rehab.platform.BuildConfig
 import com.rehab.platform.components.AddToScheduleDialog
+import com.rehab.platform.messages.MessagesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPlayerScreen(
     viewModel: VideoPlayerViewModel,
-    onNavigateBack: () -> Unit,
-    onShareToExpert: () -> Unit
+    messagesViewModel: MessagesViewModel,
+    onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val messagesUiState by messagesViewModel.uiState.collectAsState()
     val context = LocalContext.current
     
     var showCompletedDialog by remember { mutableStateOf(false) }
     var completionNotes by remember { mutableStateOf("") }
     var showScheduleDialog by remember { mutableStateOf(false) }
+    var showShareDialog by remember { mutableStateOf(false) }
     
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -70,8 +75,8 @@ fun VideoPlayerScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onShareToExpert) {
-                        Icon(Icons.Default.Share, "Share to Expert")
+                    IconButton(onClick = { showShareDialog = true }) {
+                        Icon(Icons.Default.Share, "Share to Expert/Admin")
                     }
                 }
             )
@@ -249,13 +254,6 @@ fun VideoPlayerScreen(
         )
     }
     
-    // Show success message when scheduled
-    LaunchedEffect(uiState.scheduleCreated) {
-        if (uiState.scheduleCreated) {
-            // Could show a Snackbar here
-        }
-    }
-    
     // Completion Dialog
     if (showCompletedDialog) {
         AlertDialog(
@@ -302,6 +300,138 @@ fun VideoPlayerScreen(
             }
         )
     }
+    
+    // Share Dialog
+    if (showShareDialog) {
+        ShareToContactDialog(
+            onDismiss = { showShareDialog = false },
+            contacts = messagesUiState.contacts,
+            onShare = { contactId, message ->
+                messagesViewModel.shareVideo(uiState.video!!.id, contactId, message)
+                showShareDialog = false
+            },
+            videoTitle = uiState.video?.title ?: ""
+        )
+    }
+}
+
+@Composable
+fun ShareToContactDialog(
+    onDismiss: () -> Unit,
+    contacts: List<com.rehab.platform.data.model.ExpertInfo>,
+    onShare: (Int, String) -> Unit,
+    videoTitle: String
+) {
+    var selectedContactId by remember { mutableIntStateOf(0) }
+    var shareMessage by remember { mutableStateOf("Check out this exercise!") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Share, null) },
+        title = { Text("Share Video") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "Share: $videoTitle",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                if (contacts.isEmpty()) {
+                    Text(
+                        "No contacts available. Please contact your hospital to get assigned.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else {
+                    // Contact selection
+                    Text(
+                        "Send to:",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        contacts.forEach { contact ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .clickable { selectedContactId = contact.id }
+                                    .background(
+                                        if (selectedContactId == contact.id)
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        else
+                                            MaterialTheme.colorScheme.surface
+                                    )
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedContactId == contact.id,
+                                    onClick = { selectedContactId = contact.id }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Icon(
+                                    if (contact.role == "admin") Icons.Default.AdminPanelSettings 
+                                    else Icons.Default.MedicalServices,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (contact.role == "admin") 
+                                        MaterialTheme.colorScheme.tertiary 
+                                    else 
+                                        MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        contact.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        if (contact.role == "admin") "Administrator" else "Rehabilitation Expert",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Message input
+                    OutlinedTextField(
+                        value = shareMessage,
+                        onValueChange = { shareMessage = it },
+                        label = { Text("Add a message") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (selectedContactId > 0) {
+                        onShare(selectedContactId, shareMessage)
+                    }
+                },
+                enabled = selectedContactId > 0 && contacts.isNotEmpty()
+            ) {
+                Text("Share")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

@@ -186,8 +186,8 @@ fun AppNavigation(
             }
             VideoPlayerScreen(
                 viewModel = videoViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onShareToExpert = { messagesViewModel.sendMessage(videoId) }
+                messagesViewModel = messagesViewModel,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
         

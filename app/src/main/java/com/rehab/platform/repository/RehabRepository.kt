@@ -243,6 +243,105 @@ class RehabRepository(
         }
     }
     
+    suspend fun getAllContacts(): Result<List<com.rehab.platform.data.model.ExpertInfo>> {
+        return try {
+            val contacts = mutableListOf<com.rehab.platform.data.model.ExpertInfo>()
+            
+            // 1. Get current user
+            val currentUserResponse = apiService.getCurrentUser()
+            if (!currentUserResponse.isSuccessful || currentUserResponse.body() == null) {
+                return Result.failure(Exception("Failed to get current user"))
+            }
+            val currentUser = currentUserResponse.body()!!
+            
+            // 2. Get assigned expert if exists
+            if (currentUser.assignedExpertId != null) {
+                try {
+                    val expertResponse = apiService.getUserById(currentUser.assignedExpertId)
+                    if (expertResponse.isSuccessful && expertResponse.body() != null) {
+                        val expert = expertResponse.body()!!
+                        
+                        // Count unread messages from this expert
+                        val messagesResponse = apiService.getMessages()
+                        val unreadFromExpert = if (messagesResponse.isSuccessful) {
+                            messagesResponse.body()?.messages?.count { msg ->
+                                msg.senderId == expert.id && 
+                                msg.receiverId == currentUser.id && 
+                                !msg.isRead
+                            } ?: 0
+                        } else 0
+                        
+                        contacts.add(
+                            com.rehab.platform.data.model.ExpertInfo(
+                                id = expert.id,
+                                name = expert.name,
+                                email = expert.email,
+                                role = expert.role,
+                                hospital = expert.hospital,
+                                unreadCount = unreadFromExpert
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    // Log but continue to admins
+                    println("Error loading expert: ${e.message}")
+                }
+            }
+            
+            // 3. Get all messages to find admins
+            try {
+                val messagesResponse = apiService.getMessages()
+                if (messagesResponse.isSuccessful && messagesResponse.body() != null) {
+                    val messages = messagesResponse.body()!!.messages
+                    
+                    // Find unique admin senders
+                    val adminIds = messages
+                        .filter { it.sender?.role == "admin" }
+                        .map { it.senderId }
+                        .distinct()
+                    
+                    // Fetch each admin's details
+                    for (adminId in adminIds) {
+                        try {
+                            val adminResponse = apiService.getUserById(adminId)
+                            if (adminResponse.isSuccessful && adminResponse.body() != null) {
+                                val admin = adminResponse.body()!!
+                                
+                                // Count unread messages from this admin
+                                val unreadFromAdmin = messages.count { msg ->
+                                    msg.senderId == admin.id && 
+                                    msg.receiverId == currentUser.id && 
+                                    !msg.isRead
+                                }
+                                
+                                contacts.add(
+                                    com.rehab.platform.data.model.ExpertInfo(
+                                        id = admin.id,
+                                        name = admin.name,
+                                        email = admin.email,
+                                        role = admin.role,
+                                        hospital = admin.hospital,
+                                        unreadCount = unreadFromAdmin
+                                    )
+                                )
+                            }
+                        } catch (e: Exception) {
+                            // Log and continue
+                            println("Error loading admin $adminId: ${e.message}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Log but return whatever we have
+                println("Error loading messages: ${e.message}")
+            }
+            
+            Result.success(contacts)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
     suspend fun getConversation(expertId: Int): Result<List<Message>> {
         return try {
             val response = apiService.getConversation(expertId)
