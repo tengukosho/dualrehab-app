@@ -3,7 +3,6 @@ package com.rehab.platform.video
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -37,25 +35,52 @@ fun VideoPlayerScreen(
     val uiState by viewModel.uiState.collectAsState()
     val messagesUiState by messagesViewModel.uiState.collectAsState()
     val context = LocalContext.current
-    
+
     var showCompletedDialog by remember { mutableStateOf(false) }
     var completionNotes by remember { mutableStateOf("") }
     var showScheduleDialog by remember { mutableStateOf(false) }
-    var showShareDialog by remember { mutableStateOf(false) }
-    
+    var showContactExpertDialog by remember { mutableStateOf(false) }
+    var showSpeedDialog by remember { mutableStateOf(false) }
+
+    // Playback states
+    var playbackSpeed by remember { mutableStateOf(1f) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableStateOf(0L) }
+    var duration by remember { mutableStateOf(0L) }
+
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
             repeatMode = Player.REPEAT_MODE_OFF
             playWhenReady = false
+
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY) {
+                        duration = this@apply.duration
+                    }
+                }
+
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+            })
         }
     }
-    
+
+    // Update current position
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentPosition = exoPlayer.currentPosition
+            kotlinx.coroutines.delay(100)
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             exoPlayer.release()
         }
     }
-    
+
     LaunchedEffect(uiState.video) {
         uiState.video?.let { video ->
             val videoUrl = "${BuildConfig.BASE_URL.replace("/api/", "")}${video.videoUrl}"
@@ -64,7 +89,12 @@ fun VideoPlayerScreen(
             exoPlayer.prepare()
         }
     }
-    
+
+    // Change playback speed
+    LaunchedEffect(playbackSpeed) {
+        exoPlayer.setPlaybackSpeed(playbackSpeed)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -75,8 +105,12 @@ fun VideoPlayerScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showShareDialog = true }) {
-                        Icon(Icons.Default.Share, "Share to Expert/Admin")
+                    // Download button
+                    IconButton(onClick = { viewModel.downloadVideo() }) {
+                        Icon(
+                            if (uiState.isDownloaded) Icons.Default.CloudDone else Icons.Default.Download,
+                            "Download for offline"
+                        )
                     }
                 }
             )
@@ -84,34 +118,10 @@ fun VideoPlayerScreen(
     ) { paddingValues ->
         if (uiState.isLoading) {
             Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
+                Modifier.fillMaxSize().padding(paddingValues),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
-            }
-        } else if (uiState.video == null) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.Error,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("Video not found", style = MaterialTheme.typography.titleLarge)
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = { viewModel.refresh() }) {
-                        Text("Retry")
-                    }
-                }
             }
         } else {
             Column(
@@ -121,70 +131,161 @@ fun VideoPlayerScreen(
                     .verticalScroll(rememberScrollState())
             ) {
                 // Video Player
-                AndroidView(
-                    factory = { context ->
-                        PlayerView(context).apply {
-                            player = exoPlayer
-                            layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.WRAP_CONTENT
-                            )
-                            useController = true
-                            setShowNextButton(false)
-                            setShowPreviousButton(false)
-                        }
-                    },
-                    modifier = Modifier
+                Box(
+                    Modifier
                         .fillMaxWidth()
-                        .height(240.dp)
+                        .aspectRatio(16f / 9f)
                         .background(Color.Black)
-                )
-                
-                // Video Info
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                player = exoPlayer
+                                layoutParams = FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                useController = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Download progress overlay
+                    if (uiState.isDownloading) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.7f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    progress = uiState.downloadProgress / 100f,
+                                    modifier = Modifier.size(64.dp)
+                                )
+                                Text(
+                                    "Downloading ${uiState.downloadProgress}%",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                        }
+                    }
+
+                    // Play/Pause overlay
+                    Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        IconButton(
+                            onClick = {
+                                if (isPlaying) exoPlayer.pause()
+                                else exoPlayer.play()
+                            },
+                            modifier = Modifier.size(72.dp)
+                        ) {
+                            Icon(
+                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                    }
+
+                    // Player controls at bottom
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Skip backward
+                        IconButton(onClick = {
+                            exoPlayer.seekTo(maxOf(0, exoPlayer.currentPosition - 10000))
+                        }) {
+                            Icon(Icons.Default.Replay10, "Backward 10s", tint = Color.White)
+                        }
+
+                        // Skip forward
+                        IconButton(onClick = {
+                            exoPlayer.seekTo(minOf(duration, exoPlayer.currentPosition + 10000))
+                        }) {
+                            Icon(Icons.Default.Forward10, "Forward 10s", tint = Color.White)
+                        }
+
+                        // Playback speed
+                        OutlinedButton(
+                            onClick = { showSpeedDialog = true },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text("${playbackSpeed}x")
+                        }
+                    }
+                }
+
+                // Progress indicator
+                Card(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(formatTime(currentPosition))
+                            Text(formatTime(duration))
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = if (duration > 0) currentPosition.toFloat() / duration else 0f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                // Video Details
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        uiState.video!!.title,
+                        uiState.video?.title ?: "",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
-                    
+
                     Spacer(Modifier.height(8.dp))
-                    
+
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        AssistChip(
+                        Chip(
                             onClick = { },
-                            label = {
-                                Text(
-                                    uiState.video!!.difficultyLevel.replaceFirstChar { it.uppercase() }
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.FitnessCenter,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                            label = { Text(uiState.video?.category?.name ?: "") }
                         )
-                        
                         Text(
-                            "${uiState.video!!.duration / 60}:${
-                                String.format(
-                                    "%02d",
-                                    uiState.video!!.duration % 60
-                                )
-                            }",
+                            "${uiState.video?.duration ?: 0} min",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Chip(
+                            onClick = { },
+                            label = { Text(uiState.video?.difficultyLevel ?: "beginner") }
+                        )
                     }
-                    
-                    Spacer(Modifier.height(16.dp))
-                    
-                    if (uiState.video!!.description != null) {
+
+                    if (uiState.video?.description != null) {
+                        Spacer(Modifier.height(16.dp))
                         Text(
                             "Description",
                             style = MaterialTheme.typography.titleMedium,
@@ -195,10 +296,10 @@ fun VideoPlayerScreen(
                             uiState.video!!.description!!,
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Spacer(Modifier.height(16.dp))
                     }
-                    
-                    if (uiState.video!!.instructions != null) {
+
+                    if (uiState.video?.instructions != null) {
+                        Spacer(Modifier.height(16.dp))
                         Text(
                             "Instructions",
                             style = MaterialTheme.typography.titleMedium,
@@ -209,10 +310,11 @@ fun VideoPlayerScreen(
                             uiState.video!!.instructions!!,
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Spacer(Modifier.height(16.dp))
                     }
-                    
-                    // Mark as Completed Button
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // Action Buttons
                     Button(
                         onClick = { showCompletedDialog = true },
                         modifier = Modifier.fillMaxWidth(),
@@ -225,10 +327,9 @@ fun VideoPlayerScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(if (uiState.isCompleted) "Completed" else "Mark as Completed")
                     }
-                    
+
                     Spacer(Modifier.height(8.dp))
-                    
-                    // Add to Schedule Button
+
                     OutlinedButton(
                         onClick = { showScheduleDialog = true },
                         modifier = Modifier.fillMaxWidth()
@@ -237,11 +338,88 @@ fun VideoPlayerScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("Add to Schedule")
                     }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Contact Expert Button
+                    OutlinedButton(
+                        onClick = { showContactExpertDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Message, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Contact Expert")
+                    }
                 }
             }
         }
     }
-    
+
+    // Playback Speed Dialog
+    if (showSpeedDialog) {
+        AlertDialog(
+            onDismissRequest = { showSpeedDialog = false },
+            title = { Text("Playback Speed") },
+            text = {
+                Column {
+                    listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                        TextButton(
+                            onClick = {
+                                playbackSpeed = speed
+                                showSpeedDialog = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "${speed}x",
+                                fontWeight = if (speed == playbackSpeed) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSpeedDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Mark as Completed Dialog
+    if (showCompletedDialog) {
+        AlertDialog(
+            onDismissRequest = { showCompletedDialog = false },
+            title = { Text("Mark as Completed") },
+            text = {
+                Column {
+                    Text("Add any notes about this exercise (optional):")
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = completionNotes,
+                        onValueChange = { completionNotes = it },
+                        placeholder = { Text("Notes...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.markAsCompleted(completionNotes)
+                    showCompletedDialog = false
+                }) {
+                    Text("Complete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCompletedDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     // Schedule Dialog
     if (showScheduleDialog) {
         AddToScheduleDialog(
@@ -253,246 +431,79 @@ fun VideoPlayerScreen(
             videoTitle = uiState.video?.title ?: ""
         )
     }
-    
-    // Completion Dialog
-    if (showCompletedDialog) {
+
+    // Contact Expert Dialog
+    if (showContactExpertDialog) {
+        var messageText by remember { mutableStateOf("") }
+
         AlertDialog(
-            onDismissRequest = { showCompletedDialog = false },
-            icon = { Icon(Icons.Default.CheckCircle, contentDescription = null) },
-            title = { Text("Mark as Completed") },
+            onDismissRequest = { showContactExpertDialog = false },
+            icon = { Icon(Icons.Default.Message, "Contact Expert") },
+            title = { Text("Contact Expert About This Video") },
             text = {
                 Column {
-                    Text("Add any notes about this exercise:")
-                    Spacer(Modifier.height(8.dp))
+                    Text("Send a message about: ${uiState.video?.title}")
+                    Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
-                        value = completionNotes,
-                        onValueChange = { completionNotes = it },
-                        placeholder = { Text("Optional notes...") },
+                        value = messageText,
+                        onValueChange = { messageText = it },
+                        placeholder = { Text("Type your question or concern...") },
                         modifier = Modifier.fillMaxWidth(),
-                        maxLines = 3
+                        maxLines = 5,
+                        minLines = 3
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.markAsCompleted(completionNotes)
-                        showCompletedDialog = false
-                    }
+                        // Get expert ID from current user and send using shareVideo
+                        messagesUiState.currentUser?.assignedExpertId?.let { expertId ->
+                            val videoMessage = "Question about video '${uiState.video?.title}': $messageText"
+                            messagesViewModel.shareVideo(
+                                videoId = uiState.video?.id ?: 0,
+                                contactId = expertId,
+                                message = messageText
+                            )
+                        }
+                        showContactExpertDialog = false
+                        messageText = ""
+                    },
+                    enabled = messageText.isNotBlank()
                 ) {
-                    Text("Complete")
+                    Text("Send")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCompletedDialog = false }) {
+                TextButton(onClick = {
+                    showContactExpertDialog = false
+                    messageText = ""
+                }) {
                     Text("Cancel")
                 }
             }
         )
     }
-    
-    // Rating Dialog
-    if (uiState.showRatingDialog) {
-        RatingDialog(
-            onDismiss = { viewModel.dismissRatingDialog() },
-            onSubmit = { rating, notes ->
-                viewModel.submitRating(rating, notes)
-            }
-        )
-    }
-    
-    // Share Dialog
-    if (showShareDialog) {
-        ShareToContactDialog(
-            onDismiss = { showShareDialog = false },
-            contacts = messagesUiState.contacts,
-            onShare = { contactId, message ->
-                messagesViewModel.shareVideo(uiState.video!!.id, contactId, message)
-                showShareDialog = false
-            },
-            videoTitle = uiState.video?.title ?: ""
-        )
-    }
 }
 
 @Composable
-fun ShareToContactDialog(
-    onDismiss: () -> Unit,
-    contacts: List<com.rehab.platform.data.model.ExpertInfo>,
-    onShare: (Int, String) -> Unit,
-    videoTitle: String
-) {
-    var selectedContactId by remember { mutableIntStateOf(0) }
-    var shareMessage by remember { mutableStateOf("Check out this exercise!") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Share, null) },
-        title = { Text("Share Video") },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    "Share: $videoTitle",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                if (contacts.isEmpty()) {
-                    Text(
-                        "No contacts available. Please contact your hospital to get assigned.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                } else {
-                    // Contact selection
-                    Text(
-                        "Send to:",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        contacts.forEach { contact ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(MaterialTheme.shapes.medium)
-                                    .clickable { selectedContactId = contact.id }
-                                    .background(
-                                        if (selectedContactId == contact.id)
-                                            MaterialTheme.colorScheme.primaryContainer
-                                        else
-                                            MaterialTheme.colorScheme.surface
-                                    )
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = selectedContactId == contact.id,
-                                    onClick = { selectedContactId = contact.id }
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Icon(
-                                    if (contact.role == "admin") Icons.Default.AdminPanelSettings 
-                                    else Icons.Default.MedicalServices,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = if (contact.role == "admin") 
-                                        MaterialTheme.colorScheme.tertiary 
-                                    else 
-                                        MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        contact.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        if (contact.role == "admin") "Administrator" else "Rehabilitation Expert",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Message input
-                    OutlinedTextField(
-                        value = shareMessage,
-                        onValueChange = { shareMessage = it },
-                        label = { Text("Add a message") },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 3
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (selectedContactId > 0) {
-                        onShare(selectedContactId, shareMessage)
-                    }
-                },
-                enabled = selectedContactId > 0 && contacts.isNotEmpty()
-            ) {
-                Text("Share")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+fun Chip(onClick: () -> Unit, label: @Composable () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+    ) {
+        Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+            ProvideTextStyle(MaterialTheme.typography.labelMedium) {
+                label()
             }
         }
-    )
+    }
 }
 
-@Composable
-fun RatingDialog(
-    onDismiss: () -> Unit,
-    onSubmit: (Int, String) -> Unit
-) {
-    var rating by remember { mutableIntStateOf(0) }
-    var notes by remember { mutableStateOf("") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Star, contentDescription = null) },
-        title = { Text("Rate this Exercise") },
-        text = {
-            Column {
-                Text("How was this exercise?")
-                Spacer(Modifier.height(16.dp))
-                
-                // Star Rating
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    for (i in 1..5) {
-                        IconButton(
-                            onClick = { rating = i }
-                        ) {
-                            Icon(
-                                if (i <= rating) Icons.Default.Star else Icons.Default.StarBorder,
-                                contentDescription = "Rate $i stars",
-                                tint = if (i <= rating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                    }
-                }
-                
-                Spacer(Modifier.height(8.dp))
-                
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    placeholder = { Text("Additional feedback...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onSubmit(rating, notes) },
-                enabled = rating > 0
-            ) {
-                Text("Submit")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Skip")
-            }
-        }
-    )
+fun formatTime(millis: Long): String {
+    val seconds = (millis / 1000) % 60
+    val minutes = (millis / (1000 * 60)) % 60
+    return String.format("%02d:%02d", minutes, seconds)
 }

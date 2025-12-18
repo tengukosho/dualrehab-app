@@ -22,7 +22,8 @@ fun ProfileScreen(
     onNavigateToEditProfile: () -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
     onNavigateToPrivacy: () -> Unit = {},
-    onNavigateToAbout: () -> Unit = {}
+    onNavigateToAbout: () -> Unit = {},
+    onNavigateToTutorial: () -> Unit = {}  // NEW: Tutorial trigger
 ) {
     Scaffold(
         topBar = {
@@ -162,6 +163,29 @@ fun ProfileScreen(
                     Icon(Icons.Default.ChevronRight, null)
                 },
                 modifier = Modifier.clickable { onNavigateToPrivacy() }
+            )
+            
+            Divider(Modifier.padding(vertical = 8.dp))
+            
+            // Help & Support Section
+            Text(
+                "Help & Support",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(16.dp)
+            )
+            
+            // Tutorial Button
+            ListItem(
+                headlineContent = { Text("Tutorial") },
+                supportingContent = { Text("View app tutorial again") },
+                leadingContent = {
+                    Icon(Icons.Default.Help, null)
+                },
+                trailingContent = {
+                    Icon(Icons.Default.ChevronRight, null)
+                },
+                modifier = Modifier.clickable { onNavigateToTutorial() }
             )
             
             Divider(Modifier.padding(vertical = 8.dp))

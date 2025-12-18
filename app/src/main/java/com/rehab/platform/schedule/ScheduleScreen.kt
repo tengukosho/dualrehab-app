@@ -28,8 +28,31 @@ fun ScheduleScreen(
     onVideoClick: (Int) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    
+    // FIXED: Show upcoming schedules (today onwards)
     val schedulesForDay = remember(uiState.selectedDate, uiState.schedules) {
-        viewModel.getSchedulesForSelectedDate()
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        
+        val selected = Calendar.getInstance().apply {
+            time = uiState.selectedDate
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        
+        // If selected date is today or future, show schedules for that day
+        // If selected date is past, show all upcoming schedules
+        if (selected.before(today)) {
+            viewModel.getUpcomingSchedules()
+        } else {
+            viewModel.getSchedulesForSelectedDate()
+        }
     }
     
     // Auto-select today if selected date is in the past
@@ -151,7 +174,7 @@ fun WeekCalendar(
     onDateSelected: (Date) -> Unit,
     schedules: List<Schedule>
 ) {
-    // Generate dates starting from today (not beginning of week)
+    // Generate dates starting from today for the next 7 days
     val weekDates = remember {
         val today = Calendar.getInstance()
         today.set(Calendar.HOUR_OF_DAY, 0)
@@ -159,10 +182,14 @@ fun WeekCalendar(
         today.set(Calendar.SECOND, 0)
         today.set(Calendar.MILLISECOND, 0)
         
-        (0..6).map {
-            val date = today.time
-            today.add(Calendar.DAY_OF_MONTH, 1)
-            date
+        (0..6).map { dayOffset ->
+            val calendar = Calendar.getInstance()
+            calendar.set(Calendar.HOUR_OF_DAY, 0)
+            calendar.set(Calendar.MINUTE, 0)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            calendar.add(Calendar.DAY_OF_MONTH, dayOffset)
+            calendar.time
         }
     }
     
@@ -171,18 +198,15 @@ fun WeekCalendar(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(weekDates) { date ->
-            val isPast = date.before(Date())
-            if (!isPast) {
-                DayCell(
-                    date = date,
-                    isSelected = isSameDay(date, selectedDate),
-                    isToday = isSameDay(date, Date()),
-                    hasSchedule = schedules.any { schedule ->
-                        schedule.scheduledDate.startsWith(formatDateForComparison(date))
-                    },
-                    onClick = { onDateSelected(date) }
-                )
-            }
+            DayCell(
+                date = date,
+                isSelected = isSameDay(date, selectedDate),
+                isToday = isSameDay(date, Date()),
+                hasSchedule = schedules.any { schedule ->
+                    schedule.scheduledDate.startsWith(formatDateForComparison(date))
+                },
+                onClick = { onDateSelected(date) }
+            )
         }
     }
 }

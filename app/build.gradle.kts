@@ -94,19 +94,24 @@ dependencies {
     // DataStore (Preferences)
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
-    // ExoPlayer (Video)
+    // ExoPlayer (Video) - ENHANCED for Phase 1
     implementation("androidx.media3:media3-exoplayer:1.2.0")
     implementation("androidx.media3:media3-ui:1.2.0")
     implementation("androidx.media3:media3-common:1.2.0")
+    implementation("androidx.media3:media3-exoplayer-dash:1.2.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.2.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // WorkManager (Notifications)
+    // WorkManager (Background tasks)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // Accompanist (Permissions)
     implementation("com.google.accompanist:accompanist-permissions:0.32.0")
+
+    // REMOVED: MPAndroidChart - not needed, causes build errors
+    // You can use Compose Canvas for custom charts instead
 
     // Testing
     testImplementation("junit:junit:4.13.2")

@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -16,10 +17,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.rehab.platform.auth.AuthViewModel
+import com.rehab.platform.download.VideoDownloadManager
 import com.rehab.platform.home.HomeScreen
 import com.rehab.platform.home.HomeViewModel
 import com.rehab.platform.messages.MessagesScreen
 import com.rehab.platform.messages.MessagesViewModel
+import com.rehab.platform.onboarding.OnboardingScreen
 import com.rehab.platform.profile.EditProfileScreen
 import com.rehab.platform.profile.NotificationsScreen
 import com.rehab.platform.profile.PrivacyScreen
@@ -30,6 +33,7 @@ import com.rehab.platform.progress.ProgressViewModel
 import com.rehab.platform.repository.RehabRepository
 import com.rehab.platform.schedule.ScheduleScreen
 import com.rehab.platform.schedule.ScheduleViewModel
+import com.rehab.platform.utils.OnboardingManager
 import com.rehab.platform.video.VideoPlayerScreen
 import com.rehab.platform.video.VideoPlayerViewModel
 
@@ -44,6 +48,7 @@ sealed class Screen(val route: String) {
     object EditProfile : Screen("edit_profile")
     object Notifications : Screen("notifications")
     object Privacy : Screen("privacy")
+    object Onboarding : Screen("onboarding")
     object VideoDetail : Screen("video/{videoId}") {
         fun createRoute(videoId: Int) = "video/$videoId"
     }
@@ -80,7 +85,11 @@ fun AppNavigation(
             }.getOrNull()
         }
     }
-    
+
+    // Initialize download manager
+    val context = LocalContext.current
+    val downloadManager = remember { VideoDownloadManager(context) }
+
     NavHost(
         navController = navController,
         startDestination = if (isLoggedIn) Screen.Home.route else Screen.Login.route
@@ -99,7 +108,7 @@ fun AppNavigation(
                 }
             )
         }
-        
+
         composable(Screen.Register.route) {
             com.rehab.platform.auth.RegisterScreen(
                 authViewModel = authViewModel,
@@ -113,7 +122,7 @@ fun AppNavigation(
                 }
             )
         }
-        
+
         // Main App with Bottom Nav
         composable(Screen.Home.route) {
             MainScreen(
@@ -126,7 +135,7 @@ fun AppNavigation(
                 repository = repository
             )
         }
-        
+
         composable(Screen.Schedule.route) {
             MainScreen(
                 navController = navController,
@@ -138,7 +147,7 @@ fun AppNavigation(
                 repository = repository
             )
         }
-        
+
         composable(Screen.Progress.route) {
             MainScreen(
                 navController = navController,
@@ -150,7 +159,7 @@ fun AppNavigation(
                 repository = repository
             )
         }
-        
+
         composable(Screen.Messages.route) {
             MainScreen(
                 navController = navController,
@@ -162,7 +171,7 @@ fun AppNavigation(
                 repository = repository
             )
         }
-        
+
         composable(Screen.Profile.route) {
             MainScreen(
                 navController = navController,
@@ -174,7 +183,7 @@ fun AppNavigation(
                 repository = repository
             )
         }
-        
+
         // Video Detail
         composable(
             route = Screen.VideoDetail.route,
@@ -182,7 +191,11 @@ fun AppNavigation(
         ) { backStackEntry ->
             val videoId = backStackEntry.arguments?.getInt("videoId") ?: 0
             val videoViewModel = remember {
-                VideoPlayerViewModel(repository, videoId)
+                VideoPlayerViewModel(
+                    repository = repository,
+                    videoId = videoId,
+                    downloadManager = downloadManager
+                )
             }
             VideoPlayerScreen(
                 viewModel = videoViewModel,
@@ -190,7 +203,7 @@ fun AppNavigation(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-        
+
         // Profile Settings Screens
         composable(Screen.EditProfile.route) {
             EditProfileScreen(
@@ -202,16 +215,25 @@ fun AppNavigation(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-        
+
         composable(Screen.Notifications.route) {
             NotificationsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-        
+
         composable(Screen.Privacy.route) {
             PrivacyScreen(
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // Onboarding/Tutorial Screen
+        composable(Screen.Onboarding.route) {
+            OnboardingScreen(
+                onFinish = {
+                    navController.popBackStack()
+                }
             )
         }
     }
@@ -231,19 +253,19 @@ fun MainScreen(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val messagesUiState by messagesViewModel.uiState.collectAsState()
-    
+
     // Load current user
     LaunchedEffect(Unit) {
         messagesViewModel.loadCurrentUser()
     }
-    
+
     // Get current user for profile
     val currentUser = remember {
         derivedStateOf {
             messagesUiState.currentUser
         }
     }
-    
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -254,7 +276,7 @@ fun MainScreen(
                     BottomNavItem.Messages,
                     BottomNavItem.Profile
                 )
-                
+
                 items.forEach { item ->
                     NavigationBarItem(
                         icon = {
@@ -298,7 +320,7 @@ fun MainScreen(
                 Screen.Profile.route -> messagesViewModel.loadCurrentUser()
             }
         }
-        
+
         Box(Modifier.padding(paddingValues)) {
             when (currentRoute) {
                 Screen.Home.route -> {
@@ -313,7 +335,7 @@ fun MainScreen(
                         onLogout = { }
                     )
                 }
-                
+
                 Screen.Schedule.route -> {
                     ScheduleScreen(
                         viewModel = scheduleViewModel,
@@ -322,11 +344,11 @@ fun MainScreen(
                         }
                     )
                 }
-                
+
                 Screen.Progress.route -> {
                     ProgressScreen(viewModel = progressViewModel)
                 }
-                
+
                 Screen.Messages.route -> {
                     MessagesScreen(
                         viewModel = messagesViewModel,
@@ -335,7 +357,7 @@ fun MainScreen(
                         }
                     )
                 }
-                
+
                 Screen.Profile.route -> {
                     ProfileScreen(
                         user = currentUser.value,
@@ -353,6 +375,9 @@ fun MainScreen(
                         },
                         onNavigateToPrivacy = {
                             navController.navigate(Screen.Privacy.route)
+                        },
+                        onNavigateToTutorial = {
+                            navController.navigate(Screen.Onboarding.route)
                         }
                     )
                 }
