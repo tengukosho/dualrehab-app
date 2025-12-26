@@ -33,12 +33,18 @@ class MessagesViewModel(private val repository: RehabRepository) : ViewModel() {
     private val _messageText = MutableStateFlow("")
     val messageText: StateFlow<String> = _messageText.asStateFlow()
     
-    init {
-        loadCurrentUser()
-        loadContacts()
-        loadUnreadCount()
-    }
     
+    private var hasLoadedData = false
+
+    fun loadDataIfNeeded() {
+        if (!hasLoadedData) {
+            loadCurrentUser()
+            loadContacts()
+            loadUnreadCount()
+            hasLoadedData = true
+        }
+    }
+
     fun loadCurrentUser() {
         viewModelScope.launch {
             val result = repository.getCurrentUser()
@@ -154,7 +160,7 @@ class MessagesViewModel(private val repository: RehabRepository) : ViewModel() {
     
     fun shareVideo(videoId: Int, contactId: Int, message: String) {
         viewModelScope.launch {
-            val videoMessage = """📹 Video Lesson #$videoId
+            val videoMessage = """ðŸ“¹ Video Lesson #$videoId
 
 $message"""
             

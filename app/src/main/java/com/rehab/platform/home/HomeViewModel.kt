@@ -24,8 +24,13 @@ class HomeViewModel(private val repository: RehabRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     
-    init {
-        loadData()
+    private var hasLoadedData = false
+    
+    fun loadDataIfNeeded() {
+        if (!hasLoadedData) {
+            loadData()
+            hasLoadedData = true
+        }
     }
     
     private fun loadData() {
@@ -109,7 +114,6 @@ class HomeViewModel(private val repository: RehabRepository) : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isRefreshing = true, error = null)
             
-            // Load both in parallel
             val categoriesJob = launch { loadCategories() }
             val videosJob = launch {
                 if (_uiState.value.selectedCategory != null) {

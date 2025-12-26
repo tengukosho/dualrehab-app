@@ -29,6 +29,10 @@ fun ScheduleScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
+    LaunchedEffect(Unit) {
+        viewModel.loadSchedulesIfNeeded()
+    }
+
     // FIXED: Show upcoming schedules (today onwards)
     val schedulesForDay = remember(uiState.selectedDate, uiState.schedules) {
         val today = Calendar.getInstance().apply {

@@ -31,9 +31,13 @@ fun MessagesScreen(
     val messageText by viewModel.messageText.collectAsState()
     val listState = rememberLazyListState()
     
+    LaunchedEffect(Unit) {
+        viewModel.loadDataIfNeeded()
+    }
+
     // Debug logging
     LaunchedEffect(uiState) {
-        println("🔍 DEBUG MessagesScreen:")
+        println("ðŸ” DEBUG MessagesScreen:")
         println("  isLoading: ${uiState.isLoading}")
         println("  experts: ${uiState.experts.size}")
         println("  admins: ${uiState.admins.size}")
@@ -240,7 +244,7 @@ fun ContactsList(
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        "🏥 Your Rehabilitation Experts",
+                        "ðŸ¥ Your Rehabilitation Experts",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -271,7 +275,7 @@ fun ContactsList(
                         tint = MaterialTheme.colorScheme.tertiary
                     )
                     Text(
-                        "🛡️ Administrators",
+                        "ðŸ›¡ï¸ Administrators",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )

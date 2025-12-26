@@ -29,6 +29,10 @@ fun HomeScreen(
     onNavigateToMessages: () -> Unit,
     onLogout: () -> Unit
 ) {
+    LaunchedEffect(Unit) {
+        homeViewModel.loadDataIfNeeded()
+    }
+
     val uiState by homeViewModel.uiState.collectAsState()
     
     Scaffold(

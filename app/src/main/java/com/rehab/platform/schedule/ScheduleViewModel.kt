@@ -23,8 +23,13 @@ class ScheduleViewModel(private val repository: RehabRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(ScheduleUiState())
     val uiState: StateFlow<ScheduleUiState> = _uiState.asStateFlow()
     
-    init {
-        loadSchedules()
+    private var hasLoadedData = false
+    
+    fun loadSchedulesIfNeeded() {
+        if (!hasLoadedData) {
+            loadSchedules()
+            hasLoadedData = true
+        }
     }
     
     fun loadSchedules() {
@@ -54,7 +59,6 @@ class ScheduleViewModel(private val repository: RehabRepository) : ViewModel() {
         }
     }
     
-    // NEW: Get schedules from today onwards (including today)
     fun getUpcomingSchedules(): List<Schedule> {
         val today = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)

@@ -29,6 +29,10 @@ fun ProgressScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
+    LaunchedEffect(Unit) {
+        viewModel.loadProgressIfNeeded()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

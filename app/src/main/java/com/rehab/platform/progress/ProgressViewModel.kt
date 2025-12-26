@@ -22,15 +22,19 @@ class ProgressViewModel(private val repository: RehabRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(ProgressUiState())
     val uiState: StateFlow<ProgressUiState> = _uiState.asStateFlow()
     
-    init {
-        loadProgress()
+    private var hasLoadedData = false
+    
+    fun loadProgressIfNeeded() {
+        if (!hasLoadedData) {
+            loadProgress()
+            hasLoadedData = true
+        }
     }
     
     fun loadProgress() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             
-            // Load stats
             val statsResult = repository.getProgressStats()
             val progressResult = repository.getProgress()
             

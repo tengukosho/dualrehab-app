@@ -141,7 +141,7 @@ class NotificationHelper(private val context: Context) {
         
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_PROGRESS)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("🎉 $milestone")
+            .setContentTitle("ðŸŽ‰ $milestone")
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -193,7 +193,7 @@ class NotificationHelper(private val context: Context) {
      */
     fun showDailyMotivation() {
         val motivationalMessages = listOf(
-            "Time for your daily exercise! Your body will thank you! 💪",
+            "Time for your daily exercise! Your body will thank you! ðŸ’ª",
             "Don't forget your rehabilitation exercises today!",
             "Consistency is key! Let's complete today's exercises!",
             "Your progress is amazing! Keep it up!",
